@@ -1,101 +1,94 @@
 import argparse
-import pandas as pd
-from datasets import Dataset
-from transformers import (
-    AutoTokenizer, 
-    AutoModelForSequenceClassification, 
-    TrainingArguments, 
-    Trainer
-)
-from sklearn.metrics import accuracy_score
-from pathlib import Path
 import torch
+from datasets import load_dataset
+from unsloth import FastLanguageModel
+from unsloth.chat_templates import get_chat_template, standardize_sharegpt
+from trl import SFTConfig, SFTTrainer
+from transformers import DataCollatorForSeq2Seq
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Intent Detection Model")
-    parser.add_argument("--data-dir", type=str, default="sample_data", help="Directory containing processed CSVs")
-    parser.add_argument("--model-name", type=str, default="distilbert-base-uncased", help="Base model to fine-tune")
-    parser.add_argument("--output-dir", type=str, default="models/intent_model", help="Where to save the model")
-    parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for training and evaluation")
+    parser = argparse.ArgumentParser(description="Train Unsloth Model on Banking77")
+    parser.add_argument("--data-file", type=str, default="sample_data/train_unsloth.jsonl")
+    parser.add_argument("--model-name", type=str, default="unsloth/Llama-3.2-1B-Instruct")
+    parser.add_argument("--output-dir", type=str, default="outputs")
+    parser.add_argument("--save-model-dir", type=str, default="lora_model")
     return parser.parse_args()
-
-def compute_metrics(pred):
-    labels = pred.label_ids
-    preds = pred.predictions.argmax(-1)
-    acc = accuracy_score(labels, preds)
-    return {"accuracy": acc}
 
 def main():
     args = parse_args()
-    data_path = Path(args.data_dir)
-    
-    # 1. Load the label mapping to configure the model
-    label_map_df = pd.read_csv(data_path / "label_mapping.csv")
-    label2id = dict(zip(label_map_df["label"], label_map_df["label_id"]))
-    id2label = {id: label for label, id in label2id.items()}
-    num_labels = len(label2id)
+    max_seq_length = 2048
+    dtype = Float16 # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
 
-    # 2. Load the processed CSV files into Hugging Face Datasets
-    train_df = pd.read_csv(data_path / "train.csv")
-    test_df = pd.read_csv(data_path / "test.csv")
-    
-    train_dataset = Dataset.from_pandas(train_df)
-    test_dataset = Dataset.from_pandas(test_df)
-
-    # 3. Load Tokenizer and Model
-    print(f"Loading model: {args.model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name,
-        num_labels=num_labels,
-        id2label=id2label,
-        label2id=label2id
+    print("1. Loading Model...")
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = args.model_name,
+        max_seq_length = max_seq_length,
+        dtype = dtype, # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
+        load_in_4bit = True,
     )
 
-    # 4. Tokenize the text data
-    def tokenize_function(examples):
-        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=128)
-
-    print("Tokenizing datasets...")
-    tokenized_train = train_dataset.map(tokenize_function, batched=True)
-    tokenized_test = test_dataset.map(tokenize_function, batched=True)
-
-    # Rename label_id to label so the Trainer understands it
-    tokenized_train = tokenized_train.rename_column("label_id", "labels")
-    tokenized_test = tokenized_test.rename_column("label_id", "labels")
-
-    # 5. Set up Training Arguments
-    training_args = TrainingArguments(
-        output_dir=args.output_dir,
-        num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        load_best_model_at_end=True,
-        logging_dir="./logs",
-        logging_steps=50,
-        fp16=torch.cuda.is_available(), # Uses Colab T4's mixed precision for faster training
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r = 16, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
+                        "gate_proj", "up_proj", "down_proj",],
+        lora_alpha = 16,
+        lora_dropout = 0, # Supports any, but = 0 is optimized
+        bias = "none",    # Supports any, but = "none" is optimized
+        # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
+        use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
+        random_state = 3407,
+        use_rslora = False,  # We support rank stabilized LoRA
+        loftq_config = None, # And LoftQ
     )
 
-    # 6. Initialize Trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=tokenized_train,
-        eval_dataset=tokenized_test,
-        tokenizer=tokenizer,
-        compute_metrics=compute_metrics,
-    )
+    print("2. Formatting Dataset...")
+    tokenizer = get_chat_template(tokenizer, chat_template="llama-3.1")
 
-    # 7. Train and Save
-    print("Starting training...")
+    def formatting_prompts_func(examples):
+        convos = examples["conversations"]
+        texts = [tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False) for convo in convos]
+        return { "text" : texts }
+
+    dataset = load_dataset("json", data_files=args.data_file, split="train")
+    dataset = standardize_sharegpt(dataset)
+    dataset = dataset.map(formatting_prompts_func, batched=True)
+
+    print("3. Initializing Trainer...")
+    # --- YOUR PROVIDED TRAINER BLOCK ---
+    trainer = SFTTrainer(
+        model = model,
+        tokenizer = tokenizer,
+        train_dataset = dataset,
+        dataset_text_field = "text",
+        max_seq_length = max_seq_length,
+        data_collator = DataCollatorForSeq2Seq(tokenizer = tokenizer),
+        packing = False, # Can make training 5x faster for short sequences.
+        args = SFTConfig(
+            per_device_train_batch_size = 2,
+            gradient_accumulation_steps = 4,
+            warmup_steps = 5,
+            num_train_epochs = 1, # Set this for 1 full training run.
+            max_steps = 60,
+            learning_rate = 2e-4,
+            logging_steps = 1,
+            optim = "adamw_8bit",
+            weight_decay = 0.001,
+            lr_scheduler_type = "linear",
+            seed = 3407,
+            output_dir = args.output_dir,
+            report_to = "none", # Use TrackIO/WandB etc
+        ),
+    )
+    # -----------------------------------
+
+    print("4. Starting Training...")
     trainer.train()
-    
-    print(f"Saving final model to {args.output_dir}")
-    trainer.save_model(args.output_dir)
-    print("Training complete!")
+
+    print("5. Saving Model...")
+    model.save_pretrained(args.save_model_dir)
+    tokenizer.save_pretrained(args.save_model_dir)
+    print("Done!")
 
 if __name__ == "__main__":
     main()
