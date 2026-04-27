@@ -1,4 +1,5 @@
 import argparse
+import yaml
 import torch
 from datasets import load_dataset
 from unsloth import FastLanguageModel
@@ -8,38 +9,39 @@ from transformers import DataCollatorForSeq2Seq
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Unsloth Model on Banking77")
-    parser.add_argument("--data-file", type=str, default="sample_data/train_unsloth.jsonl")
-    parser.add_argument("--model-name", type=str, default="unsloth/Llama-3.2-1B-Instruct")
-    parser.add_argument("--output-dir", type=str, default="outputs")
-    parser.add_argument("--save-model-dir", type=str, default="lora_model")
+    parser.add_argument("--config", type=str, default="../configs/train.yaml", help="Path to training config file")
     return parser.parse_args()
 
 def main():
     args = parse_args()
-    max_seq_length = 2048
-    dtype = Float16 # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
+    
+    # Load parameters from the YAML config file
+    with open(args.config, 'r') as file:
+        config = yaml.safe_load(file)
 
-    print("1. Loading Model...")
+    max_seq_length = config.get("max_seq_length", 2048)
+    dtype = None # Auto detection
+
+    print(f"1. Loading Model: {config['model_name']}...")
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name = args.model_name,
+        model_name = config["model_name"],
         max_seq_length = max_seq_length,
-        dtype = dtype, # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
+        dtype = dtype, 
         load_in_4bit = True,
     )
 
     model = FastLanguageModel.get_peft_model(
         model,
-        r = 16, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+        r = config.get("lora_r", 16), 
         target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj",],
-        lora_alpha = 16,
-        lora_dropout = 0, # Supports any, but = 0 is optimized
-        bias = "none",    # Supports any, but = "none" is optimized
-        # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
-        use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
+                          "gate_proj", "up_proj", "down_proj"],
+        lora_alpha = config.get("lora_alpha", 16),
+        lora_dropout = 0, 
+        bias = "none", 
+        use_gradient_checkpointing = "unsloth", 
         random_state = 3407,
-        use_rslora = False,  # We support rank stabilized LoRA
-        loftq_config = None, # And LoftQ
+        use_rslora = False, 
+        loftq_config = None, 
     )
 
     print("2. Formatting Dataset...")
@@ -50,44 +52,49 @@ def main():
         texts = [tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False) for convo in convos]
         return { "text" : texts }
 
-    dataset = load_dataset("json", data_files=args.data_file, split="train")
-    dataset = standardize_sharegpt(dataset)
-    dataset = dataset.map(formatting_prompts_func, batched=True)
+    # Load Train Data
+    train_dataset = load_dataset("json", data_files=config["data_file"], split="train")
+    train_dataset = standardize_sharegpt(train_dataset)
+    train_dataset = train_dataset.map(formatting_prompts_func, batched=True)
+
+    # Load Validation Data
+    val_dataset = load_dataset("json", data_files=config["val_data_file"], split="train")
+    val_dataset = standardize_sharegpt(val_dataset)
+    val_dataset = val_dataset.map(formatting_prompts_func, batched=True)
 
     print("3. Initializing Trainer...")
-    # --- YOUR PROVIDED TRAINER BLOCK ---
     trainer = SFTTrainer(
         model = model,
         tokenizer = tokenizer,
-        train_dataset = dataset,
+        train_dataset = train_dataset,
+        eval_dataset = val_dataset,          # Passed the validation dataset here
         dataset_text_field = "text",
         max_seq_length = max_seq_length,
         data_collator = DataCollatorForSeq2Seq(tokenizer = tokenizer),
-        packing = False, # Can make training 5x faster for short sequences.
+        packing = False, 
         args = SFTConfig(
-            per_device_train_batch_size = 2,
-            gradient_accumulation_steps = 4,
-            warmup_steps = 5,
-            num_train_epochs = 1, # Set this for 1 full training run.
-            max_steps = 60,
-            learning_rate = 2e-4,
+            per_device_train_batch_size = config["per_device_train_batch_size"],
+            gradient_accumulation_steps = config["gradient_accumulation_steps"],
+            warmup_steps = config["warmup_steps"],
+            num_train_epochs = config["num_train_epochs"],
+            learning_rate = float(config["learning_rate"]),
             logging_steps = 1,
-            optim = "adamw_8bit",
-            weight_decay = 0.001,
-            lr_scheduler_type = "linear",
+            optim = config["optimizer"],
+            weight_decay = config["weight_decay"],
+            lr_scheduler_type = config["lr_scheduler_type"],
+            evaluation_strategy = config.get("evaluation_strategy", "epoch"), # Added eval strategy
             seed = 3407,
-            output_dir = args.output_dir,
-            report_to = "none", # Use TrackIO/WandB etc
+            output_dir = config["output_dir"],
+            report_to = "none", 
         ),
     )
-    # -----------------------------------
 
     print("4. Starting Training...")
     trainer.train()
 
     print("5. Saving Model...")
-    model.save_pretrained(args.save_model_dir)
-    tokenizer.save_pretrained(args.save_model_dir)
+    model.save_pretrained(config["save_model_dir"])
+    tokenizer.save_pretrained(config["save_model_dir"])
     print("Done!")
 
 if __name__ == "__main__":

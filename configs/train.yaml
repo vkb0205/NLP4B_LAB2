@@ -1,0 +1,22 @@
+# configs/train.yaml
+
+# Data and Model Paths
+data_file: "../sample_data/train_unsloth.jsonl"
+model_name: "unsloth/Llama-3.2-1B-Instruct"
+output_dir: "../outputs"
+save_model_dir: "../lora_model"
+
+# Model Hyperparameters
+max_seq_length: 2048
+lora_r: 16
+lora_alpha: 16
+
+# Training Hyperparameters
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 4
+learning_rate: 0.0002  # 2e-4
+optimizer: "adamw_8bit"
+num_train_epochs: 3
+warmup_steps: 5
+weight_decay: 0.001
+lr_scheduler_type: "linear"
