@@ -67,7 +67,7 @@ def main():
         model = model,
         tokenizer = tokenizer,
         train_dataset = train_dataset,
-        eval_dataset = val_dataset,          # Passed the validation dataset here
+        eval_dataset = val_dataset,          
         dataset_text_field = "text",
         max_seq_length = max_seq_length,
         data_collator = DataCollatorForSeq2Seq(tokenizer = tokenizer),
@@ -82,7 +82,7 @@ def main():
             optim = config["optimizer"],
             weight_decay = config["weight_decay"],
             lr_scheduler_type = config["lr_scheduler_type"],
-            evaluation_strategy = config.get("evaluation_strategy", "epoch"), # Added eval strategy
+            eval_strategy = config.get("eval_strategy", "epoch"), 
             seed = 3407,
             output_dir = config["output_dir"],
             report_to = "none", 

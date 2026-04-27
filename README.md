@@ -1,9 +1,10 @@
-# Project 2: Fine-Tuning Intent Detection Model with BANKING77 Dataset
+# Project 2: Fine-Tuning Intent Detection Model with BANKING777 Dataset
 ## 🎥 Video Demonstration
-**[Link to Video Demonstration on Google Drive]**  
+
+Link: https://drive.google.com/drive/folders/1cIBOD0jbMgXr4LUeyLN68MZEsZkHQrYJ?usp=sharing 
 ---
 
-## 📂 Repository Structure
+## Repository Structure
 The project follows the required directory structure:
 ```text
 banking-intent-unsloth/
@@ -32,21 +33,19 @@ To set up the environment and run this project, it is highly recommended to use 
 
 **1. Clone the repository:**
 ```bash
-git clone https://github.com/[YOUR_USERNAME]/NLP4B_LAB2.git
-cd NLP4B_LAB2
+https://github.com/vkb0205/banking-intent-unsloth.git
+cd banking-intent-unsloth
 ```
 
 **2. Install required dependencies:**
 Unsloth requires specific versions of PyTorch, xformers, and trl. Run the following commands:
 ```bash
-pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-pip install --no-deps "xformers<0.0.27" "trl<0.9.0" peft accelerate bitsandbytes
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 How to Run the Model
+## How to Run the Model
 
 ### 1. Download Data, Preprocess, and Train
 You can execute the entire pipeline (data downloading, text normalization, dataset splitting, and model fine-tuning) using a single bash script:

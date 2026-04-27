@@ -14,9 +14,6 @@ def parse_args():
     return parser.parse_args()
 
 def clean_text(text):
-    """
-    Perform basic text cleaning and normalization as required by the assignment.
-    """
     if not isinstance(text, str):
         return ""
     # Lowercase the text
@@ -61,7 +58,7 @@ def main():
     # 1. First split: Separate Test data
     train_temp, test_data = train_test_split(combined, test_size=args.test_size, random_state=42)
     
-    # 2. Second split: Extract Validation data from the remaining Training data (e.g., 10%)
+    # 2. Second split: Extract Validation data from the remaining Training data 
     train_data, val_data = train_test_split(train_temp, test_size=0.1, random_state=42)
 
     print("Saving datasets...")
@@ -70,7 +67,7 @@ def main():
     val_data[["conversations"]].to_json(output_path / "val_unsloth.jsonl", orient="records", lines=True)
     test_data[["conversations"]].to_json(output_path / "test_unsloth.jsonl", orient="records", lines=True)
     
-    # Save standard CSVs for EDA (Optional but helpful)
+    # Save standard CSVs for EDA 
     train_data[["text", "label", "intent"]].rename(columns={"label": "label_id"}).to_csv(output_path / "train.csv", index=False)
     val_data[["text", "label", "intent"]].rename(columns={"label": "label_id"}).to_csv(output_path / "val.csv", index=False)
     test_data[["text", "label", "intent"]].rename(columns={"label": "label_id"}).to_csv(output_path / "test.csv", index=False)

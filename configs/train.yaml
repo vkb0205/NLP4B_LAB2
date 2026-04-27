@@ -2,7 +2,7 @@
 
 # Data and Model Paths
 data_file: "../sample_data/train_unsloth.jsonl"
-val_data_file: "../sample_data/val_unsloth.jsonl" # Added validation dataset path
+val_data_file: "../sample_data/val_unsloth.jsonl" 
 model_name: "unsloth/Llama-3.2-1B-Instruct"
 output_dir: "../outputs"
 save_model_dir: "../lora_model"
@@ -23,4 +23,4 @@ weight_decay: 0.001
 lr_scheduler_type: "linear"
 
 # Evaluation Hyperparameters
-evaluation_strategy: "epoch"   # Evaluate at the end of every epoch
+eval_strategy: "epoch"   

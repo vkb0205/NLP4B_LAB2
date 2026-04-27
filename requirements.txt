@@ -1,3 +1,13 @@
-datasets
-pandas
-scikit-learn
+unsloth
+transformers==4.56.2
+trl==0.22.2
+sentencepiece
+protobuf
+datasets==4.3.0
+huggingface_hub>=0.34.0
+hf_transfer
+bitsandbytes
+accelerate
+peft
+triton
+xformers==0.0.34

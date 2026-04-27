@@ -6,7 +6,6 @@ from unsloth.chat_templates import get_chat_template
 
 class IntentClassification:
     def __init__(self, model_path):
-        # According to requirements, model_path points to a config file
         with open(model_path, 'r') as file:
             config = yaml.safe_load(file)
             
@@ -22,10 +21,8 @@ class IntentClassification:
             load_in_4bit = True,
         )
         
-        # Enable Unsloth's 2x faster inference mode
         FastLanguageModel.for_inference(self.model)
         
-        # Apply the same chat template used during training
         self.tokenizer = get_chat_template(self.tokenizer, chat_template="llama-3.1")
 
     def __call__(self, message):
@@ -45,9 +42,6 @@ class IntentClassification:
         predicted_label = self.tokenizer.decode(outputs[0][inputs.shape[1]:], skip_special_tokens=True)
         return predicted_label.strip()
 
-# ==========================================
-# Usage Example & Test Set Evaluation
-# ==========================================
 def evaluate_test_set(classifier, test_file):
     print(f"\n--- Evaluating Test Set Accuracy ---")
     correct = 0
@@ -56,8 +50,6 @@ def evaluate_test_set(classifier, test_file):
     with open(test_file, 'r') as f:
         lines = f.readlines()
 
-    # NOTE: To keep the video short (2-5 mins), evaluate a sample of the test set (e.g., first 50)
-    # Change `lines[:50]` to `lines` to evaluate the whole set
     for line in tqdm(lines[:50], desc="Evaluating"):
         data = json.loads(line)
 
