@@ -1,3 +1,4 @@
 # configs/inference.yaml
-model_checkpoint: "../lora_model"
+model_checkpoint: "lora_model"
 max_seq_length: 2048
+test_file_path: "sample_data/test_unsloth.jsonl"
